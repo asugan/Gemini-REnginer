@@ -100,11 +100,40 @@ async function getSession() {
   });
 
   const html = res.data;
-  const atToken = html.match(/"SNlM0e":"([^"]+)"/)?.[1];
-  const fSid = html.match(/"FdrFJe":"([^"]+)"/)?.[1];
-  const bl = html.match(/"cfb2h":"([^"]+)"/)?.[1];
 
-  if (!atToken) throw new Error('SNlM0e (at token) bulunamadi — cookie\'leri kontrol et');
+  console.log(`[session] status: ${res.status}, content-length: ${html.length}`);
+
+  // WIZ_global_data parse
+  let wizData = null;
+  const wizMatch = html.match(/WIZ_global_data\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+  if (wizMatch) {
+    try {
+      wizData = JSON.parse(wizMatch[1]);
+    } catch (e) {
+      console.error('[session] WIZ_global_data parse hatasi:', e.message);
+    }
+  }
+
+  let fSid = html.match(/"FdrFJe":"([^"]+)"/)?.[1];
+  let bl = html.match(/"cfb2h":"([^"]+)"/)?.[1];
+
+  // AT token arama: SNlM0e (eski) veya thykhd (yeni)
+  let atToken = html.match(/"SNlM0e":"([^"]+)"/)?.[1];
+
+  if (!atToken && wizData) {
+    // thykhd = yeni AT token (Google SNlM0e'yi bununla degistirdi)
+    for (const key of ['thykhd', 'SNlM0e']) {
+      if (wizData[key] && typeof wizData[key] === 'string' && wizData[key].length > 20) {
+        console.log(`[session] AT token: WIZ_global_data["${key}"] (${wizData[key].length} chars)`);
+        atToken = wizData[key];
+        break;
+      }
+    }
+  }
+
+  if (!atToken) {
+    throw new Error('AT token bulunamadi (SNlM0e/thykhd) — cookie\'leri kontrol et');
+  }
 
   sessionCache = { atToken, fSid, bl };
   setTimeout(() => { sessionCache = null; }, 5 * 60 * 1000); // 5dk cache
@@ -233,52 +262,49 @@ function getNestedValue(data, path, defaultVal = null) {
 
 function parseResponseByFrame(content) {
   const frames = [];
-  let pos = 0;
-  const lengthPattern = /(\d+)\n/g;
 
-  while (pos < content.length) {
-    // Skip whitespace
-    while (pos < content.length && /\s/.test(content[pos])) pos++;
-    if (pos >= content.length) break;
-
-    lengthPattern.lastIndex = pos;
-    const match = lengthPattern.exec(content);
-    if (!match || match.index !== pos) break;
-
-    const lengthVal = match[1];
-    const utf16Length = parseInt(lengthVal, 10);
-    const startContent = match.index + lengthVal.length + 1; // +1 for \n
-
-    // UTF-16 code units -> JS char count
-    let charCount = 0;
-    let unitsFound = 0;
-    for (let i = startContent; i < content.length && unitsFound < utf16Length; i++) {
-      const code = content.charCodeAt(i);
-      const units = code > 0xFFFF ? 2 : 1;
-      if (unitsFound + units > utf16Length) break;
-      unitsFound += units;
-      charCount++;
-    }
-
-    if (unitsFound < utf16Length) break; // Incomplete frame
-
-    const endPos = startContent + charCount;
-    const chunk = content.slice(startContent, endPos).trim();
-    pos = endPos;
-
-    if (!chunk) continue;
-
-    try {
-      const parsed = JSON.parse(chunk);
-      if (Array.isArray(parsed)) {
-        frames.push(...parsed);
-      } else {
-        frames.push(parsed);
-      }
-    } catch { /* skip unparseable */ }
+  // Anti-XSSI prefix strip: ")]}'"\n
+  if (content.startsWith(")]}'")) {
+    const idx = content.indexOf('\n');
+    if (idx !== -1) content = content.slice(idx + 1);
   }
 
-  return { frames, remaining: content.slice(pos) };
+  // Basit yaklasim: satir satir parse et
+  // Format: her frame = sayi satirini takip eden JSON satiri
+  const lines = content.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    i++;
+
+    // Bos satir veya sayi satirini atla, sonraki satiri JSON olarak dene
+    if (/^\d+$/.test(line)) {
+      // Bir sonraki satir(lar) JSON payload
+      let jsonStr = '';
+      while (i < lines.length) {
+        const nextLine = lines[i].trim();
+        if (!nextLine) { i++; continue; }
+        // Yeni bir sayi satiri mi?
+        if (/^\d+$/.test(nextLine) && !jsonStr) { break; }
+        jsonStr += lines[i];
+        i++;
+        // JSON tamamlanmis mi?
+        try {
+          const parsed = JSON.parse(jsonStr);
+          if (Array.isArray(parsed)) {
+            frames.push(...parsed);
+          } else {
+            frames.push(parsed);
+          }
+          break;
+        } catch {
+          // Henuz tamamlanmamis, devam et
+        }
+      }
+    }
+  }
+
+  return { frames, remaining: '' };
 }
 
 function checkErrorCode(part) {
