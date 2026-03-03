@@ -694,8 +694,48 @@ app.post('/generate-image', async (req, res) => {
     }
 
     console.log(`[generate-image] ${result.generatedImages.length} resim bulundu`);
+
+    // Download images server-side (Google URLs require auth cookies + redirect handling)
+    const imagesData = [];
+    for (const img of result.generatedImages) {
+      try {
+        const cookieStr = buildCookieString();
+        const ua = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0';
+
+        // Step 1: Get redirect URL from lh3.googleusercontent.com
+        const redirectResp = await axios.get(img.url, {
+          headers: { 'Cookie': cookieStr, 'User-Agent': ua },
+          maxRedirects: 0,
+          validateStatus: s => s === 302 || s === 200,
+          timeout: 15000,
+        });
+
+        let imageData;
+        if (redirectResp.status === 302) {
+          // Step 2: Download from redirect URL (work.fife.usercontent.google.com)
+          const redirectUrl = redirectResp.headers.location;
+          const dlResp = await axios.get(redirectUrl, {
+            headers: { 'Cookie': cookieStr, 'User-Agent': ua },
+            responseType: 'arraybuffer',
+            timeout: 30000,
+          });
+          imageData = dlResp.data;
+        } else {
+          imageData = redirectResp.data;
+        }
+
+        const b64 = Buffer.from(imageData).toString('base64');
+        imagesData.push({ url: img.url, base64: b64, mimeType: 'image/png' });
+        console.log(`[generate-image] resim indirildi: ${imageData.length} bytes`);
+      } catch (dlErr) {
+        console.error(`[generate-image] resim indirilemedi: ${dlErr.message}`);
+        imagesData.push({ url: img.url, base64: null, mimeType: null });
+      }
+    }
+
     res.json({
       images: result.generatedImages.map(img => img.url),
+      imagesData,
       expandedPrompt: result.expandedPrompt,
       message: result.text,
     });
