@@ -2,10 +2,9 @@
   "name": "slideshow-creator",
   "version": "1.0.0",
   "description": "",
-  "main": "gemini-image.js",
+  "main": "gemini-api.js",
   "scripts": {
-    "start": "node gemini-image.js",
-    "capture": "node capture.js"
+    "start": "node gemini-api.js"
   },
   "keywords": [],
   "author": "",
