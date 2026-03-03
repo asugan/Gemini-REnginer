@@ -1,0 +1,12 @@
+.env
+node_modules/
+dist/
+build/
+*.log
+*.tmp
+*.cache
+*.bak
+*.swp
+.DS_Store
+.idea/
+.vscode/
