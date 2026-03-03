@@ -11,6 +11,10 @@ app.use(express.json());
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Mutable cookie store (rotation destegi icin)
+// COOKIE_RAW varsa direkt onu kullan (tarayicidan Copy as cURL ile alinabilir)
+// Yoksa bireysel env var'lardan olustur
+let rawCookieOverride = process.env.COOKIE_RAW || null;
+
 const cookies = {
   '__Secure-1PSID': process.env.PSID,
   '__Secure-1PSIDTS': process.env.PSIDTS,
@@ -22,28 +26,43 @@ const cookies = {
 };
 
 function buildCookieString() {
+  if (rawCookieOverride) return rawCookieOverride;
   return Object.entries(cookies)
     .filter(([, v]) => v)
     .map(([k, v]) => `${k}=${v}`)
     .join('; ');
 }
 
+// SAPISID'i cookie string'inden de cikar (COOKIE_RAW kullanildiginda)
+function getSapisid() {
+  if (cookies.SAPISID) return cookies.SAPISID;
+  if (rawCookieOverride) {
+    const m = rawCookieOverride.match(/SAPISID=([^;]+)/);
+    return m ? m[1] : null;
+  }
+  return null;
+}
+
 function sapisidHash() {
+  const sapisid = getSapisid();
+  if (!sapisid) return null;
   const ts = Math.floor(Date.now() / 1000);
   const hash = crypto.createHash('sha1')
-    .update(`${ts} ${cookies.SAPISID} https://gemini.google.com`)
+    .update(`${ts} ${sapisid} https://gemini.google.com`)
     .digest('hex');
   return `SAPISIDHASH ${ts}_${hash}`;
 }
 
 function buildBaseHeaders() {
   return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0',
     'Cookie': buildCookieString(),
     'Origin': 'https://gemini.google.com',
     'Referer': 'https://gemini.google.com/',
     'X-Same-Domain': '1',
     'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+    'x-goog-ext-73010989-jspb': '[0]',
+    'x-goog-ext-73010990-jspb': '[0]',
   };
 }
 
@@ -457,12 +476,12 @@ async function generate(prompt, options = {}) {
 
   const url = `https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?${params}`;
 
+  const headers = { ...buildBaseHeaders(), ...modelConfig.header };
+  const authHash = sapisidHash();
+  if (authHash) headers['Authorization'] = authHash;
+
   const res = await axios.post(url, body.toString(), {
-    headers: {
-      ...buildBaseHeaders(),
-      'Authorization': sapisidHash(),
-      ...modelConfig.header,
-    },
+    headers,
     responseType: 'text',
     timeout: 90000,
   });
@@ -533,12 +552,12 @@ async function generateStream(prompt, res, options = {}) {
   let finalParsed = null;
 
   try {
+    const streamHeaders = { ...buildBaseHeaders(), ...modelConfig.header };
+    const streamAuth = sapisidHash();
+    if (streamAuth) streamHeaders['Authorization'] = streamAuth;
+
     const axiosRes = await axios.post(url, body.toString(), {
-      headers: {
-        ...buildBaseHeaders(),
-        'Authorization': sapisidHash(),
-        ...modelConfig.header,
-      },
+      headers: streamHeaders,
       responseType: 'stream',
       timeout: 90000,
     });
