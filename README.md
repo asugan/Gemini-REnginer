@@ -1,73 +1,73 @@
 # Gemini Reverse-Engineered API
 
-Google Gemini'nin web arayuzunu kullanan Node.js/Express API. Text generation, image generation ve SSE streaming destekler.
+Node.js/Express API that uses Google Gemini's web interface. Supports text generation, image generation, and SSE streaming.
 
-## Kurulum
+## Installation
 
 ```bash
 npm install
 ```
 
-## .env Ayarlari
+## .env Configuration
 
-Tarayicidan `gemini.google.com`'a giris yap, DevTools (F12) ac, herhangi bir request'e sag tikla → **Copy as cURL** → Cookie header degerini kopyala:
+Log into `gemini.google.com` in your browser, open DevTools (F12), right-click any request → **Copy as cURL** → copy the Cookie header value:
 
 ```
 COOKIE_RAW=AEC=...; NID=...; SID=...; __Secure-1PSID=...; SAPISID=...; ...
 ```
 
-## Calistirma
+## Running
 
 ```bash
 npm start
 ```
 
-Sunucu `http://localhost:3000` adresinde baslar.
+Server starts at `http://localhost:3000`.
 
 ## API Endpoints
 
 ### POST /chat
 
-Text generation. `stream: true` ile SSE destegi.
+Text generation. Supports SSE with `stream: true`.
 
 ```bash
-# Normal
+# Basic
 curl -X POST http://localhost:3000/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Merhaba, nasilsin?"}'
+  -d '{"prompt": "Hello, how are you?"}'
 
-# Model secimi
+# Model selection
 curl -X POST http://localhost:3000/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Merhaba", "model": "gemini-3.0-pro"}'
+  -d '{"prompt": "Hello", "model": "gemini-3.0-pro"}'
 
 # Streaming (SSE)
 curl -N -X POST http://localhost:3000/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Merhaba", "stream": true}'
+  -d '{"prompt": "Hello", "stream": true}'
 
-# Conversation devami
+# Continue conversation
 curl -X POST http://localhost:3000/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Devam et", "conversationId": "uuid-from-previous-response"}'
+  -d '{"prompt": "Continue", "conversationId": "uuid-from-previous-response"}'
 ```
 
-**Parametreler:**
+**Parameters:**
 
-| Parametre | Tip | Zorunlu | Aciklama |
-|-----------|-----|---------|----------|
-| `prompt` | string | Evet | Kullanici mesaji |
-| `model` | string | Hayir | Model secimi (varsayilan: `gemini-3.0-flash`) |
-| `stream` | boolean | Hayir | SSE streaming aktif |
-| `conversationId` | string | Hayir | Konusma devam ettirme |
-| `gemId` | string | Hayir | Ozel Gem ID |
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prompt` | string | Yes | User message |
+| `model` | string | No | Model selection (default: `gemini-3.0-flash`) |
+| `stream` | boolean | No | Enable SSE streaming |
+| `conversationId` | string | No | Continue a conversation |
+| `gemId` | string | No | Custom Gem ID |
 
-**Yanit:**
+**Response:**
 
 ```json
 {
-  "text": "Yanit metni",
-  "thoughts": "Model dusunce sureci (thinking modeli icin)",
+  "text": "Response text",
+  "thoughts": "Model thinking process (for thinking model)",
   "images": [],
   "webImages": [],
   "expandedPrompt": null,
@@ -82,22 +82,22 @@ Image generation.
 ```bash
 curl -X POST http://localhost:3000/generate-image \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "bir muz resmi ciz"}'
+  -d '{"prompt": "draw a banana"}'
 ```
 
-**Yanit:**
+**Response:**
 
 ```json
 {
   "images": ["https://lh3.googleusercontent.com/...=s2048"],
-  "expandedPrompt": "Detayli prompt",
-  "message": "Text yaniti"
+  "expandedPrompt": "Detailed prompt",
+  "message": "Text response"
 }
 ```
 
 ### POST /reset-session
 
-Session cache ve konusmalari sifirlar.
+Resets session cache and conversations.
 
 ```bash
 curl -X POST http://localhost:3000/reset-session
@@ -105,13 +105,13 @@ curl -X POST http://localhost:3000/reset-session
 
 ### GET /models
 
-Mevcut modelleri listeler.
+Lists available models.
 
 ```bash
 curl http://localhost:3000/models
 ```
 
-**Yanit:**
+**Response:**
 
 ```json
 {
@@ -125,32 +125,32 @@ curl http://localhost:3000/models
 }
 ```
 
-## Modeller
+## Models
 
-| Model | Aciklama |
-|-------|----------|
-| `gemini-3.0-flash` | Hizli, varsayilan model |
-| `gemini-3.0-pro` | Daha yetenekli, yavas |
-| `gemini-3.0-flash-thinking` | Dusunce sureci gorunur |
-| `unspecified` | Model header'i gonderilmez |
+| Model | Description |
+|-------|-------------|
+| `gemini-3.0-flash` | Fast, default model |
+| `gemini-3.0-pro` | More capable, slower |
+| `gemini-3.0-flash-thinking` | Thinking process visible |
+| `unspecified` | No model header sent |
 
-## Cookie Yenileme
+## Cookie Renewal
 
-Cookie'ler normal sartlarda haftalarca/aylarca gecerlidir. `__Secure-1PSIDTS` tokeni 540sn aralikla otomatik yenilenir.
+Cookies are normally valid for weeks/months. The `__Secure-1PSIDTS` token is automatically refreshed every 540 seconds.
 
-Cookie'ler expire oldugunda (500 hatasi alindiginda):
+When cookies expire (500 errors):
 
-1. `gemini.google.com`'a git
-2. F12 → Network → herhangi bir request → Copy as cURL
-3. Cookie header degerini `.env`'deki `COOKIE_RAW`'a yapistir
-4. Sunucuyu yeniden baslat
+1. Go to `gemini.google.com`
+2. F12 → Network → any request → Copy as cURL
+3. Paste the Cookie header value into `COOKIE_RAW` in `.env`
+4. Restart the server
 
-## Ozellikler
+## Features
 
-- Text generation ve image generation
-- SSE streaming destegi
-- 4 model secenegi
-- Otomatik cookie rotation (540sn)
+- Text generation and image generation
+- SSE streaming support
+- 4 model options
+- Automatic cookie rotation (540s)
 - In-memory conversation tracking (cid/rid/rcid)
 - UTF-16 frame-based response parser
-- Hata kodu algilama (USAGE_LIMIT, IP_BLOCKED vb.)
+- Error code detection (USAGE_LIMIT, IP_BLOCKED, etc.)
